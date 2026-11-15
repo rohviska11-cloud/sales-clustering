@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sales Time Series Analytics · Segmentasi Produk Mingguan</title>
+  <meta name="description" content="Dashboard eksplorasi transaksi mingguan dan segmentasi produk berbasis Dynamic Time Warping (DTW, CDTW, DDTW, WDTW) dengan K-Means DBA, K-Medoids, Hierarchical, dan DBSCAN." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%231B2A4A'/><path d='M10 44 L22 30 L32 38 L44 18 L54 26' stroke='%23C49A52' stroke-width='6' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js" defer></script>
+  <script src="assets/js/app.js" defer></script>
+</head>
+<body>
+  <!-- Loader -->
+  <div id="loader" aria-hidden="true">
+    <div class="loader-bars"><span></span><span></span><span></span><span></span><span></span></div>
+    <p>Menyiapkan data penjualan…</p>
+  </div>
+
+  <div id="progress"></div>
+
+  <!-- Navbar -->
+  <header class="nav" id="nav">
+    <a class="brand" href="#beranda">
+      <span class="brand-mark"><svg viewBox="0 0 64 64"><path d="M10 44 L22 30 L32 38 L44 18 L54 26" /></svg></span>
+      <span><b>Sales Analytics</b><small>Weekly Transactions</small></span>
+    </a>
+    <nav class="nav-links" id="navLinks">
+      <a href="#eksplorasi" data-spy>Eksplorasi</a>
+      <a href="#klasterisasi" data-spy>Klasterisasi</a>
+      <a href="#rekomendasi" data-spy>Rekomendasi</a>
+      <a href="#panduan" data-spy>Panduan</a>
+    </nav>
+    <button class="nav-toggle" id="navToggle" aria-label="Menu"><span></span><span></span></button>
+  </header>
+
+  <!-- HERO -->
+  <section class="hero" id="beranda">
+    <div class="hero-bg">
+      <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+      <svg class="hero-lines" id="heroLines" viewBox="0 0 1200 500" preserveAspectRatio="none"></svg>
+      <div class="grid-overlay"></div>
+    </div>
+    <div class="hero-inner">
+      <div class="hero-copy reveal">
+        <span class="kicker"><i></i>Data Intelligence · Weekly Sales</span>
+        <h1>Membaca <em>ritme</em> penjualan,<br />mengelompokkan produk<br />berdasarkan <em>pola</em>.</h1>
+        <p class="lead">Dashboard ini menelusuri 52 minggu transaksi setiap produk, lalu mengelompokkan produk yang memiliki pola permintaan serupa menggunakan keluarga metode <b>Dynamic Time Warping</b>. Hasilnya: segmentasi yang dapat langsung diterjemahkan menjadi strategi persediaan.</p>
+        <div class="hero-cta">
+          <a href="#eksplorasi" class="btn btn-gold">Mulai eksplorasi <span>→</span></a>
+          <a href="#klasterisasi" class="btn btn-ghost">Lihat hasil klaster</a>
+        </div>
+      </div>
+      <div class="hero-stats reveal" style="--d:.15s">
+        <div class="stat-chip"><span class="num" data-count id="hsProducts">0</span><span class="lbl">produk dianalisis</span></div>
+        <div class="stat-chip"><span class="num" data-count id="hsWeeks">52</span><span class="lbl">minggu pengamatan</span></div>
+        <div class="stat-chip"><span class="num" data-count id="hsMatrices">27</span><span class="lbl">matriks jarak</span></div>
+        <div class="stat-chip"><span class="num" data-count id="hsModels">0</span><span class="lbl">model dievaluasi</span></div>
+      </div>
+    </div>
+    <a href="#eksplorasi" class="scroll-hint" aria-label="Gulir"><span></span></a>
+  </section>
+
+  <main>
+    <!-- ================================================================ 01 EKSPLORASI -->
+    <section class="section" id="eksplorasi">
+      <div class="section-head reveal">
+        <span class="section-no">01</span>
+        <div>
+          <h2>Eksplorasi Awal Data</h2>
+          <p>Sebelum membentuk cluster, kita perlu mengenali datanya terlebih dahulu: seberapa besar skala transaksinya, kapan permintaan memuncak, dan seberapa beragam karakter tiap produk.</p>
+        </div>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi reveal"><span class="kpi-ic">◫</span><span class="kpi-lbl">Jumlah produk</span><span class="kpi-val" id="kProducts">–</span><span class="kpi-sub">kode produk unik</span></div>
+        <div class="kpi reveal" style="--d:.06s"><span class="kpi-ic">Σ</span><span class="kpi-lbl">Total transaksi</span><span class="kpi-val" id="kTotal">–</span><span class="kpi-sub">selama 52 minggu</span></div>
+        <div class="kpi reveal" style="--d:.12s"><span class="kpi-ic">x̄</span><span class="kpi-lbl">Rata-rata transaksi</span><span class="kpi-val" id="kAvg">–</span><span class="kpi-sub">per produk per minggu</span></div>
+        <div class="kpi reveal" style="--d:.18s"><span class="kpi-ic">∅</span><span class="kpi-lbl">Proporsi nilai nol</span><span class="kpi-val" id="kZero">–</span><span class="kpi-sub">dari seluruh sel produk–minggu</span></div>
+      </div>
+
+      <div class="card reveal">
+        <div class="card-head">
+          <div><h3>Dinamika transaksi mingguan</h3><p class="muted">Garis menunjukkan naik-turunnya permintaan agregat dari minggu ke minggu.</p></div>
+          <div class="seg" id="trendMode"><button class="on" data-v="total">Total</button><button data-v="mean">Rata-rata / produk</button></div>
+        </div>
+        <div class="chart" id="chTrend" style="height:340px"></div>
+        <div class="mini-stats">
+          <div><span>Minggu tertinggi</span><b id="mPeak">–</b><small id="mPeakV"></small></div>
+          <div><span>Minggu terendah</span><b id="mLow">–</b><small id="mLowV"></small></div>
+          <div><span>Rentang total mingguan</span><b id="mRange">–</b><small>selisih puncak & titik terendah</small></div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card reveal">
+          <h3>Produk dengan transaksi tertinggi</h3>
+          <p class="muted">Sepuluh produk penyumbang volume terbesar.</p>
+          <div class="chart" id="chTop" style="height:330px"></div>
+        </div>
+        <div class="card reveal" style="--d:.08s">
+          <h3>Produk dengan transaksi terendah</h3>
+          <p class="muted">Sepuluh produk dengan volume paling kecil.</p>
+          <div class="table-wrap"><table class="tbl" id="tblBottom"></table></div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card reveal">
+          <h3>Sebaran total transaksi per produk</h3>
+          <p class="muted">Bentuk distribusi memperlihatkan apakah volume terkonsentrasi pada sedikit produk.</p>
+          <div class="chart" id="chHist" style="height:300px"></div>
+        </div>
+        <div class="card reveal" style="--d:.08s">
+          <h3>Sebaran tingkat volatilitas</h3>
+          <p class="muted">Koefisien variasi (CV) = simpangan baku ÷ rata-rata. Makin besar, makin tidak menentu permintaannya.</p>
+          <div class="chart" id="chCV" style="height:300px"></div>
+        </div>
+      </div>
+
+      <div class="insight-grid">
+        <div class="insight reveal"><b id="iNoSales">–</b><span>produk tanpa transaksi sama sekali</span></div>
+        <div class="insight reveal" style="--d:.06s"><b id="iHighVar">–</b><span>produk masuk 10% paling volatil</span></div>
+        <div class="insight reveal" style="--d:.12s"><b id="iSteady">–</b><span>produk relatif stabil (kuartil bawah CV)</span></div>
+      </div>
+      <div class="callout reveal" id="edaNarrative"></div>
+
+      <div class="card reveal">
+        <div class="card-head">
+          <div><h3>Telusuri pola produk</h3><p class="muted">Cari dan pilih hingga 8 produk untuk membandingkan pola mingguannya.</p></div>
+        </div>
+        <div class="picker">
+          <div class="chips" id="prodChips"></div>
+          <div class="picker-input">
+            <input id="prodSearch" placeholder="Ketik kode produk, mis. P12…" autocomplete="off" />
+            <div class="suggest" id="prodSuggest"></div>
+          </div>
+        </div>
+        <div class="chart" id="chProducts" style="height:360px"></div>
+      </div>
+
+      <details class="card reveal">
+        <summary><h3>Statistik deskriptif per minggu</h3><span class="muted">klik untuk membuka</span></summary>
+        <div class="table-wrap scroll-y"><table class="tbl tbl-num" id="tblDesc"></table></div>
+      </details>
+    </section>
+
+    <!-- ================================================================ 02 KLASTERISASI -->
+    <section class="section section-alt" id="klasterisasi">
+      <div class="section-head reveal">
+        <span class="section-no">02</span>
+        <div>
+          <h2>Hasil Klasterisasi</h2>
+          <p>Pilih kombinasi representasi data, ukuran jarak, dan algoritma. Seluruh hasil telah dihitung sebelumnya, sehingga setiap perubahan tampil seketika.</p>
+        </div>
+      </div>
+
+      <div class="control-bar reveal" id="controls">
+        <div class="ctl"><label>Representasi data</label><div class="seg" id="cRep"><button data-v="Original" class="on">Data asli</button><button data-v="MinMax">MinMax</button><button data-v="Scaled">Scaled</button></div></div>
+        <div class="ctl"><label>Ukuran jarak</label><div class="seg" id="cDist"><button data-v="DTW" class="on">DTW</button><button data-v="CDTW">CDTW</button><button data-v="DDTW">DDTW</button><button data-v="WDTW">WDTW</button></div></div>
+        <div class="ctl" id="wRadius" hidden><label>Radius Sakoe–Chiba</label><div class="seg" id="cRadius"><button data-v="2" class="on">2</button><button data-v="3">3</button><button data-v="5">5</button></div></div>
+        <div class="ctl" id="wG" hidden><label>Parameter g</label><div class="seg" id="cG"><button data-v="0.05" class="on">0.05</button><button data-v="0.1">0.1</button><button data-v="0.5">0.5</button><button data-v="1.0">1.0</button></div></div>
+        <div class="ctl"><label>Algoritma</label><div class="seg" id="cAlgo"><button data-v="DBA">K-Means DBA</button><button data-v="PAM" class="on">K-Medoids</button><button data-v="HC">Hierarchical</button><button data-v="DBSCAN">DBSCAN</button></div></div>
+        <div class="ctl" id="wLink" hidden><label>Linkage</label><div class="seg" id="cLink"><button data-v="average" class="on">Average</button><button data-v="complete">Complete</button></div></div>
+        <div class="ctl" id="wK"><label>Jumlah cluster <b id="kVal">3</b></label><input type="range" id="cK" min="2" max="10" value="3" /></div>
+        <div class="ctl" id="wMs" hidden><label>min_samples</label><div class="seg" id="cMs"><button data-v="5">5</button><button data-v="10" class="on">10</button><button data-v="15">15</button></div></div>
+        <div class="ctl" id="wPct" hidden><label>eps · persentil jarak tetangga</label><div class="seg" id="cPct"><button data-v="50">P50</button><button data-v="60">P60</button><button data-v="70">P70</button><button data-v="80">P80</button><button data-v="90" class="on">P90</button><button data-v="95">P95</button></div></div>
+      </div>
+      <div class="model-tag reveal" id="modelTag"></div>
+      <div class="notice" id="clusterNotice" hidden></div>
+
+      <div id="clusterBody">
+        <div class="metric-grid" id="metricGrid"></div>
+
+        <div class="grid-2 grid-wide-left">
+          <div class="card reveal">
+            <h3>Peta kemiripan produk</h3>
+            <p class="muted">Setiap titik adalah satu produk. Proyeksi 2D dari MDS: makin dekat dua titik, makin mirip pola penjualannya.</p>
+            <div class="chart" id="chScatter" style="height:400px"></div>
+          </div>
+          <div class="card reveal" style="--d:.08s">
+            <h3>Komposisi anggota</h3>
+            <p class="muted">Proporsi produk di setiap cluster.</p>
+            <div class="chart" id="chPie" style="height:400px"></div>
+          </div>
+        </div>
+
+        <div class="card reveal">
+          <h3>Ringkasan cluster & produk representatif</h3>
+          <p class="muted">Produk representatif = anggota dengan total jarak terkecil terhadap anggota lain (medoid), sehingga paling “mewakili” cluster-nya.</p>
+          <div class="table-wrap"><table class="tbl" id="tblSummary"></table></div>
+        </div>
+
+        <div class="card reveal">
+          <h3>Perbandingan profil pusat setiap cluster</h3>
+          <p class="muted" id="centerNote"></p>
+          <div class="chart" id="chCenters" style="height:380px"></div>
+        </div>
+
+        <div class="card reveal">
+          <div class="card-head">
+            <div><h3>Jelajahi satu cluster</h3><p class="muted">Garis tipis adalah sampel anggota, garis tebal adalah profil pusatnya.</p></div>
+            <div class="seg seg-wrap" id="clusterTabs"></div>
+          </div>
+          <div class="chart" id="chCluster" style="height:400px"></div>
+          <div class="grid-2 grid-tight">
+            <div>
+              <div class="search"><input id="memberSearch" placeholder="Cari kode produk di cluster ini…" /></div>
+              <div class="table-wrap scroll-y" style="max-height:320px"><table class="tbl tbl-click" id="tblMembers"></table></div>
+              <p class="muted small" id="memberCount"></p>
+            </div>
+            <div>
+              <div class="chart" id="chOne" style="height:360px"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-sub reveal"><h3>Interpretasi & rekomendasi tiap cluster</h3><p class="muted">Narasi otomatis yang disusun dari data asli anggota cluster: tingkat volume, arah tren, volatilitas, dan waktu puncak.</p></div>
+        <div class="persona-grid" id="personaGrid"></div>
+
+        <div class="actions reveal">
+          <button class="btn btn-navy" id="dlLabels">⇩ Unduh label cluster (CSV)</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================ 03 REKOMENDASI -->
+    <section class="section" id="rekomendasi">
+      <div class="section-head reveal">
+        <span class="section-no">03</span>
+        <div>
+          <h2>Rekomendasi Metode</h2>
+          <p>Seluruh kombinasi diberi peringkat berdasarkan rata-rata ranking tiga metrik: Silhouette (↑), Davies–Bouldin (↓), dan Calinski–Harabasz (↑) dengan bobot setara. Peringkat ini adalah panduan empiris, bukan klaim bahwa satu metode selalu unggul.</p>
+        </div>
+      </div>
+
+      <div class="podium" id="podium"></div>
+
+      <div class="card reveal">
+        <div class="card-head">
+          <div><h3>Peta kekuatan metode</h3><p class="muted">Peringkat terbaik yang dicapai setiap pasangan ukuran jarak × algoritma. Warna lebih gelap = peringkat lebih baik.</p></div>
+          <div class="seg" id="hmRep"><button data-v="all" class="on">Semua</button><button data-v="Original">Data asli</button><button data-v="MinMax">MinMax</button><button data-v="Scaled">Scaled</button></div>
+        </div>
+        <div class="chart" id="chHeat" style="height:420px"></div>
+      </div>
+
+      <div class="card reveal">
+        <div class="card-head">
+          <div><h3>Adu metode pada satu matriks jarak</h3><p class="muted">Bandingkan algoritma secara langsung pada matriks dan K yang sama. Untuk DBSCAN dipilih konfigurasi eps/min_samples dengan Silhouette tertinggi.</p></div>
+        </div>
+        <div class="control-bar control-inline">
+          <div class="ctl"><label>Representasi</label><div class="seg" id="vRep"><button data-v="Original" class="on">Data asli</button><button data-v="MinMax">MinMax</button><button data-v="Scaled">Scaled</button></div></div>
+          <div class="ctl"><label>Ukuran jarak</label><select id="vKey"></select></div>
+          <div class="ctl"><label>K pembanding <b id="vKVal">3</b></label><input type="range" id="vK" min="2" max="10" value="3" /></div>
+        </div>
+        <div class="grid-2 grid-wide-left">
+          <div class="table-wrap"><table class="tbl" id="tblVs"></table></div>
+          <div class="chart" id="chRadar" style="height:360px"></div>
+        </div>
+        <div class="callout" id="vsNarrative"></div>
+      </div>
+
+      <div class="card reveal">
+        <div class="card-head">
+          <div><h3>Tabel peringkat lengkap</h3><p class="muted">Saring sesuai kebutuhan, lalu klik <b>Terapkan</b> untuk melihat hasil klasternya.</p></div>
+          <button class="btn btn-sm btn-navy" id="dlRank">⇩ CSV</button>
+        </div>
+        <div class="filters">
+          <select id="fRep"><option value="">Semua representasi</option><option>Original</option><option>MinMax</option><option>Scaled</option></select>
+          <select id="fDist"><option value="">Semua jarak</option><option>DTW</option><option>CDTW</option><option>DDTW</option><option>WDTW</option></select>
+          <select id="fAlgo"><option value="">Semua algoritma</option></select>
+          <label class="check"><input type="checkbox" id="fBalanced" /> Hanya cluster seimbang (Balance ≥ 0,5)</label>
+        </div>
+        <div class="table-wrap scroll-y" style="max-height:520px"><table class="tbl tbl-num" id="tblRank"></table></div>
+        <p class="muted small" id="rankCount"></p>
+      </div>
+    </section>
+
+    <!-- ================================================================ 04 PANDUAN -->
+    <section class="section section-alt" id="panduan">
+      <div class="section-head reveal">
+        <span class="section-no">04</span>
+        <div>
+          <h2>Panduan Metode</h2>
+          <p>Ringkasan konsep di balik setiap pilihan pada dashboard, agar hasil dapat dibaca dan dipertanggungjawabkan.</p>
+        </div>
+      </div>
+
+      <div class="pipeline reveal">
+        <div class="pipe"><span>1</span><b>Data mingguan</b><small>811 produk × 52 minggu</small></div>
+        <div class="pipe"><span>2</span><b>Representasi</b><small>Asli · MinMax · Scaled</small></div>
+        <div class="pipe"><span>3</span><b>Ukuran jarak</b><small>DTW · CDTW · DDTW · WDTW</small></div>
+        <div class="pipe"><span>4</span><b>Algoritma</b><small>DBA · Medoids · Hierarchical · DBSCAN</small></div>
+        <div class="pipe"><span>5</span><b>Evaluasi</b><small>Silhouette · DBI · CHI · Balance</small></div>
+      </div>
+
+      <div class="guide-grid">
+        <article class="guide reveal">
+          <span class="guide-ic">◐</span><h3>Representasi data</h3>
+          <dl>
+            <dt>Data asli</dt><dd>Mempertahankan besaran transaksi apa adanya. Produk dikelompokkan berdasarkan bentuk <i>dan</i> volume, sehingga produk laris cenderung terpisah dari produk kecil.</dd>
+            <dt>MinMax</dt><dd>Setiap produk diskalakan ke rentang 0–1 terhadap dirinya sendiri. Volume dihilangkan, yang tersisa adalah <i>bentuk</i> pola: kapan naik, kapan turun.</dd>
+            <dt>Scaled</dt><dd>Standardisasi per minggu (z-score kolom). Nilai menunjukkan posisi relatif produk dibanding produk lain pada minggu yang sama.</dd>
+          </dl>
+        </article>
+        <article class="guide reveal" style="--d:.06s">
+          <span class="guide-ic">⟿</span><h3>Ukuran jarak</h3>
+          <dl>
+            <dt>DTW</dt><dd>Dynamic Time Warping menyelaraskan dua deret secara lentur, sehingga pola yang sama namun bergeser beberapa minggu tetap dianggap mirip.</dd>
+            <dt>CDTW</dt><dd>DTW dengan pita Sakoe–Chiba. Radius membatasi seberapa jauh pergeseran waktu yang diizinkan, mencegah penyelarasan yang tidak wajar.</dd>
+            <dt>DDTW</dt><dd>DTW pada turunan deret. Fokusnya bergeser dari level nilai ke <i>arah perubahan</i>: naik, turun, atau datar.</dd>
+            <dt>WDTW</dt><dd>Memberi penalti bertahap pada pasangan titik yang berjauhan waktunya. Parameter <i>g</i> mengatur seberapa tajam penalti tersebut.</dd>
+          </dl>
+        </article>
+        <article class="guide reveal" style="--d:.12s">
+          <span class="guide-ic">⬡</span><h3>Algoritma clustering</h3>
+          <dl>
+            <dt>K-Means DBA</dt><dd>Centroid dibentuk dengan DTW Barycenter Averaging, menghasilkan “deret rata-rata” yang benar-benar mengikuti logika DTW.</dd>
+            <dt>K-Medoids</dt><dd>Pusat cluster adalah produk nyata (medoid), sehingga hasil mudah dijelaskan dan tahan terhadap pencilan.</dd>
+            <dt>Hierarchical</dt><dd>Menggabungkan produk secara bertahap. <i>Average</i> memakai rata-rata jarak antaranggota, <i>complete</i> memakai jarak terjauh.</dd>
+            <dt>DBSCAN</dt><dd>Mengelompokkan berdasarkan kepadatan; produk yang tidak cukup dekat dengan kelompok mana pun ditandai sebagai <i>noise</i>.</dd>
+          </dl>
+        </article>
+        <article class="guide reveal" style="--d:.18s">
+          <span class="guide-ic">◎</span><h3>Metrik evaluasi</h3>
+          <dl>
+            <dt>Silhouette ↑</dt><dd>Mengukur seberapa dekat produk dengan cluster-nya dibanding cluster lain. &gt; 0,5 kuat · 0,25–0,5 cukup · &lt; 0,25 lemah. Dihitung langsung dari matriks jarak.</dd>
+            <dt>Davies–Bouldin ↓</dt><dd>Rasio sebaran dalam cluster terhadap jarak antarcluster. Makin kecil makin baik. Dihitung pada embedding MDS 5 dimensi.</dd>
+            <dt>Calinski–Harabasz ↑</dt><dd>Rasio variasi antarcluster terhadap variasi dalam cluster. Makin besar makin baik. Dihitung pada embedding MDS 5 dimensi.</dd>
+            <dt>Balance Score</dt><dd>Entropi ternormalisasi ukuran cluster. Mendekati 1 berarti ukuran cluster merata. Ini bukan ukuran kualitas pemisahan, melainkan penanda apakah segmentasi “berguna” secara bisnis.</dd>
+          </dl>
+        </article>
+      </div>
+
+      <div class="callout callout-gold reveal">
+        <b>Catatan interpretasi bisnis.</b> Pola historis membantu mengenali produk yang tumbuh, melemah, stabil, atau fluktuatif. Rekomendasi persediaan di dashboard ini bersifat indikatif; keputusan akhir sebaiknya memadukan informasi <i>lead time</i>, biaya penyimpanan, target tingkat layanan, dan posisi stok aktual.
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div>
+      <b>Sales Time Series Analytics</b>
+      <p>Clustering deret waktu transaksi mingguan · DTW, CDTW, DDTW, WDTW.</p>
+    </div>
+    <p class="muted small" id="buildInfo"></p>
+  </footer>
+
+  <button id="toTop" aria-label="Kembali ke atas">↑</button>
+  <div id="toast"></div>
+</body>
+</html>
