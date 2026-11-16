@@ -121,7 +121,11 @@ function prepareData() {
   for (let t = 0; t < T; t++) { const col = raw.map((r) => r[t]); mu.push(mean(col)); sd.push(std(col)); }
   S.X.Original = raw;
   S.X.MinMax = S.base.minmax;
-  S.X.Scaled = raw.map((r) => r.map((v, t) => (sd[t] ? (v - mu[t]) / sd[t] : 0)));
+  S.X.Scaled = raw.map((r) => {
+  const mu = mean(r);
+  const sigma = std(r);
+  return r.map((v) => (sigma ? (v - mu) / sigma : 0));
+  });
   S.pTotal = raw.map(sum);
   S.pMean = raw.map(mean);
   S.pSd = raw.map((r) => std(r));
